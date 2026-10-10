@@ -9,8 +9,8 @@ import com.dumptruckman.minecraft.util.Logging;
 import io.vavr.control.Option;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
 import org.mvplugins.multiverse.core.MultiverseCore;
@@ -22,7 +22,7 @@ import org.mvplugins.multiverse.core.utils.webpaste.PasteService;
 import org.mvplugins.multiverse.core.utils.webpaste.PasteServiceFactory;
 import org.mvplugins.multiverse.core.utils.webpaste.PasteServiceType;
 
-final class DumpsLogPoster extends BukkitRunnable {
+final class DumpsLogPoster implements Runnable {
 
     enum UploadType {
         // BEGIN CHECKSTYLE-SUPPRESSION: JavadocVariable
@@ -77,7 +77,12 @@ final class DumpsLogPoster extends BukkitRunnable {
     }
 
     private void sendDumpsUrl(String service, String url) {
-        issuer.sendInfo(MVCorei18n.DUMPS_URL_LIST, "{service}", service, "{link}", url);
+        Runnable notify = () -> issuer.sendInfo(MVCorei18n.DUMPS_URL_LIST, "{service}", service, "{link}", url);
+        if (issuer.getIssuer() instanceof Player player) {
+            MultiverseCore.getScheduler().runTask(player, notify);
+            return;
+        }
+        MultiverseCore.getScheduler().runTask(notify);
     }
 
     private String postFilesToService(@NotNull Map<String, String> pasteFiles) {

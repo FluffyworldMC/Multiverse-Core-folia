@@ -12,15 +12,14 @@ import java.util.Objects;
 import java.util.WeakHashMap;
 
 import com.dumptruckman.minecraft.util.Logging;
+import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import io.vavr.control.Option;
 import jakarta.inject.Inject;
-import org.bukkit.Bukkit;
 import org.bukkit.block.data.type.CommandBlock;
 import org.bukkit.command.BlockCommandSender;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jvnet.hk2.annotations.Service;
 
@@ -45,13 +44,11 @@ public class CommandQueueManager {
     private static final String COMMAND_BLOCK_NAME = "@commandblock";
     private static final long TICKS_PER_SECOND = 20;
 
-    private final Plugin plugin;
     private final CoreConfig config;
     private final Map<String, CommandQueuePayload> queuedCommandMap;
 
     @Inject
-    CommandQueueManager(@NotNull MultiverseCore plugin, @NotNull CoreConfig config) {
-        this.plugin = plugin;
+    CommandQueueManager(@NotNull CoreConfig config) {
         this.config = config;
         this.queuedCommandMap = new WeakHashMap<>();
     }
@@ -68,11 +65,13 @@ public class CommandQueueManager {
             return;
         }
 
-        this.removeFromQueue(senderName);
+        synchronized (this.queuedCommandMap) {
+            this.removeFromQueue(senderName);
 
-        Logging.finer("Add new command to queue for sender %s.", senderName);
-        this.queuedCommandMap.put(senderName, payload);
-        payload.expireTask(runExpireLater(senderName, config.getConfirmTimeout()));
+            Logging.finer("Add new command to queue for sender %s.", senderName);
+            this.queuedCommandMap.put(senderName, payload);
+            payload.expireTask(runExpireLater(senderName, config.getConfirmTimeout()));
+        }
 
         payload.issuer().sendInfo(payload.prompt());
         var confirmCommand = "/mv confirm";
@@ -104,12 +103,11 @@ public class CommandQueueManager {
      * Expire task that removes a {@link CommandQueuePayload} from queue after valid duration defined.
      *
      * @param senderName    The name of the sender.
-     * @return The expire {@link BukkitTask}.
+     * @return The expire task.
      */
     @NotNull
-    private BukkitTask runExpireLater(@NotNull String senderName, int validDuration) {
-        return Bukkit.getScheduler().runTaskLater(
-                this.plugin,
+    private MyScheduledTask runExpireLater(@NotNull String senderName, int validDuration) {
+        return MultiverseCore.getScheduler().runTaskLater(
                 expireRunnable(senderName),
                 validDuration * TICKS_PER_SECOND);
     }
@@ -123,13 +121,28 @@ public class CommandQueueManager {
     @NotNull
     private Runnable expireRunnable(@NotNull String senderName) {
         return () -> {
-            CommandQueuePayload payload = this.queuedCommandMap.remove(senderName);
+            CommandQueuePayload payload;
+            synchronized (this.queuedCommandMap) {
+                payload = this.queuedCommandMap.remove(senderName);
+            }
             if (payload == null) {
                 // Payload already removed
                 return;
             }
-            payload.issuer().sendMessage(MVCorei18n.QUEUECOMMAND_EXPIRED);
+            notifyExpired(payload);
         };
+    }
+
+    private void notifyExpired(@NotNull CommandQueuePayload payload) {
+        Runnable notify = () -> payload.issuer().sendMessage(MVCorei18n.QUEUECOMMAND_EXPIRED);
+        CommandSender sender = payload.issuer().getIssuer();
+        if (sender instanceof Player player && player.isOnline()) {
+            MultiverseCore.getScheduler().runTask(player, notify);
+            return;
+        }
+        if (!(sender instanceof Player)) {
+            notify.run();
+        }
     }
 
     /**
@@ -140,16 +153,18 @@ public class CommandQueueManager {
      */
     public Attempt<Void, RunQueuedFailedReason> runQueuedCommand(@NotNull MVCommandIssuer issuer, String otpInput) {
         String senderName = parseSenderName(issuer);
-        return Option.of(this.queuedCommandMap.get(senderName)).fold(
-                () -> Attempt.failure(RunQueuedFailedReason.NO_COMMAND_IN_QUEUE),
-                payload -> runPayload(senderName, otpInput, payload));
-    }
-
-    private Attempt<Void, RunQueuedFailedReason> runPayload(String senderName, String otpInput, CommandQueuePayload payload) {
-        if (config.getUseConfirmOtp() && !Objects.equals(payload.otp(), otpInput)) {
-            return Attempt.failure(RunQueuedFailedReason.INVALID_OTP, replace("{otp}").with(otpInput));
+        CommandQueuePayload payload;
+        synchronized (this.queuedCommandMap) {
+            payload = this.queuedCommandMap.get(senderName);
+            if (payload == null) {
+                return Attempt.failure(RunQueuedFailedReason.NO_COMMAND_IN_QUEUE);
+            }
+            if (config.getUseConfirmOtp() && !Objects.equals(payload.otp(), otpInput)) {
+                return Attempt.failure(RunQueuedFailedReason.INVALID_OTP, replace("{otp}").with(otpInput));
+            }
+            this.queuedCommandMap.remove(senderName);
+            Option.of(payload.expireTask()).peek(MyScheduledTask::cancel);
         }
-        this.removeFromQueue(senderName);
         Logging.finer("Running queued command...");
         payload.action().run();
         return Attempt.success(null);
@@ -161,13 +176,15 @@ public class CommandQueueManager {
      * @param senderName    The sender that executed the command.
      */
     public void removeFromQueue(@NotNull String senderName) {
-        CommandQueuePayload payload = this.queuedCommandMap.remove(senderName);
-        if (payload == null) {
-            Logging.finer("No queue command to remove for sender %s.", senderName);
-            return;
+        synchronized (this.queuedCommandMap) {
+            CommandQueuePayload payload = this.queuedCommandMap.remove(senderName);
+            if (payload == null) {
+                Logging.finer("No queue command to remove for sender %s.", senderName);
+                return;
+            }
+            Option.of(payload.expireTask()).peek(MyScheduledTask::cancel);
+            Logging.finer("Removed queue command for sender %s.", senderName);
         }
-        Option.of(payload.expireTask()).peek(BukkitTask::cancel);
-        Logging.finer("Removed queue command for sender %s.", senderName);
     }
 
     private String parseSenderName(MVCommandIssuer issuer) {

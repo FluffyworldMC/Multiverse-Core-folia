@@ -42,8 +42,8 @@ final class DumpsService {
 
         // Initialise and add info to the debug event
         MVDumpsDebugInfoEvent versionEvent = createAndCallDebugInfoEvent();
-        new DumpsLogPoster(plugin, issuer, servicesType, getLogs(), versionEvent)
-                .runTaskAsynchronously(plugin);
+        MultiverseCore.getScheduler().runTaskAsynchronously(
+                new DumpsLogPoster(plugin, issuer, servicesType, getLogs(), versionEvent));
     }
 
     /**

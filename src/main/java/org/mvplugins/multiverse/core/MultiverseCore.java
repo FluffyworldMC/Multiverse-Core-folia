@@ -10,6 +10,8 @@ package org.mvplugins.multiverse.core;
 import java.util.logging.Logger;
 
 import com.dumptruckman.minecraft.util.Logging;
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import io.vavr.control.Try;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -40,6 +42,8 @@ import org.mvplugins.multiverse.core.world.location.UnloadedWorldLocation;
  */
 @Service
 public class MultiverseCore extends MultiverseModule {
+
+    private static TaskScheduler scheduler;
 
     @Inject
     private Provider<CoreConfig> configProvider;
@@ -84,6 +88,7 @@ public class MultiverseCore extends MultiverseModule {
      */
     @Override
     public void onEnable() {
+        scheduler = UniversalScheduler.getScheduler(this);
         super.onEnable();
         initializeDependencyInjection(new MultiverseCorePluginBinder(this));
 
@@ -131,8 +136,25 @@ public class MultiverseCore extends MultiverseModule {
         MultiverseCoreApi.shutdown();
         shutdownDependencyInjection();
         PluginServiceLocatorFactory.get().shutdown();
+        if (scheduler != null) {
+            scheduler.cancelTasks();
+            scheduler = null;
+        }
         Logging.info("- Disabled");
         Logging.shutdown();
+    }
+
+    /**
+     * Scheduler that works on Bukkit, Paper, and Folia.
+     *
+     * @return The plugin task scheduler
+     */
+    @NotNull
+    public static TaskScheduler getScheduler() {
+        if (scheduler == null) {
+            throw new IllegalStateException("Scheduler has not been initialized");
+        }
+        return scheduler;
     }
 
     private boolean shouldShowConfig() {

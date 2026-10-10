@@ -25,7 +25,6 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.plugin.Plugin;
 import org.jvnet.hk2.annotations.Service;
 
 import org.mvplugins.multiverse.core.MultiverseCore;
@@ -58,7 +57,6 @@ import org.mvplugins.multiverse.core.world.helpers.EnforcementHandler;
  */
 @Service
 final class MVPlayerListener implements CoreListener {
-    private final Plugin plugin;
     private final CoreConfig config;
     private final Provider<WorldManager> worldManagerProvider;
     private final BlockSafety blockSafety;
@@ -75,7 +73,6 @@ final class MVPlayerListener implements CoreListener {
 
     @Inject
     MVPlayerListener(
-            MultiverseCore plugin,
             CoreConfig config,
             Provider<WorldManager> worldManagerProvider,
             BlockSafety blockSafety,
@@ -89,7 +86,6 @@ final class MVPlayerListener implements CoreListener {
             DimensionFinder dimensionFinder,
             CorePermissionsChecker corePermissionsChecker,
             AsyncSafetyTeleporter asyncSafetyTeleporter) {
-        this.plugin = plugin;
         this.config = config;
         this.worldManagerProvider = worldManagerProvider;
         this.blockSafety = blockSafety;
@@ -432,8 +428,8 @@ final class MVPlayerListener implements CoreListener {
             doGameModeAndFlightEnforcement(player, world);
             return;
         }
-        server.getScheduler().runTaskLater(
-                this.plugin,
+        MultiverseCore.getScheduler().runTaskLater(
+                player,
                 () -> doGameModeAndFlightEnforcement(player, world),
                 config.getGamemodeAndFlightEnforceDelay()
         );

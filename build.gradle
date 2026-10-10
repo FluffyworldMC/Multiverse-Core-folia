@@ -63,6 +63,7 @@ dependencies {
     shadowed 'net.minidev:json-smart:2.6.0'
     shadowed 'org.jetbrains:annotations:26.1.0'
     shadowed 'io.papermc:paperlib:1.0.8'
+    shadowed 'com.github.Anon8281:UniversalScheduler:0.1.7'
 
     // Tests
     testImplementation('com.googlecode.json-simple:json-simple:1.1.1') {
@@ -101,6 +102,7 @@ shadowJar {
     relocate 'org.intellij', 'org.mvplugins.multiverse.external.intellij'
     relocate 'org.jetbrains', 'org.mvplugins.multiverse.external.jetbrains'
     relocate 'io.papermc.lib', 'org.mvplugins.multiverse.external.paperlib'
+    relocate 'com.github.Anon8281.universalScheduler', 'org.mvplugins.multiverse.core.universalScheduler'
 }
 
 publishing {
